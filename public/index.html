@@ -1,0 +1,326 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>🌿 CropGuard AI — Farm Disease Monitor</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+  <!-- ══ SIDEBAR ══════════════════════════════════════════ -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span class="logo">🌿</span>
+      <span class="logo-text">CropGuard AI</span>
+      <button class="sidebar-toggle" id="sidebarToggle">☰</button>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span><span class="nav-label">Dashboard</span></a>
+      <a href="#" class="nav-item" data-page="cameras"><span class="nav-icon">📷</span><span class="nav-label">Cameras</span></a>
+      <a href="#" class="nav-item" data-page="analysis"><span class="nav-icon">🔬</span><span class="nav-label">Live Analysis</span></a>
+      <a href="#" class="nav-item" data-page="history"><span class="nav-icon">📋</span><span class="nav-label">Scan History</span></a>
+      <a href="#" class="nav-item" data-page="settings"><span class="nav-icon">⚙️</span><span class="nav-label">Settings</span></a>
+    </nav>
+    <div class="sidebar-status">
+      <div class="status-dot" id="aiStatusDot"></div>
+      <span id="aiStatusText">AI Ready</span>
+    </div>
+  </aside>
+
+  <!-- ══ MAIN CONTENT ══════════════════════════════════════ -->
+  <main class="main-content">
+
+    <!-- ── TOP BAR ── -->
+    <header class="topbar">
+      <h1 class="page-title" id="pageTitle">Farm Dashboard</h1>
+      <div class="topbar-right">
+        <div class="live-badge" id="liveBadge"><span class="pulse"></span> LIVE</div>
+        <div class="scan-timer">Next scan: <span id="nextScanTimer">--</span>s</div>
+        <button class="btn btn-danger btn-sm" id="emergencyStop">⏹ Stop</button>
+        <button class="btn btn-primary btn-sm" id="startScanBtn">▶ Start Monitoring</button>
+      </div>
+    </header>
+
+    <!-- ══ PAGE: DASHBOARD ══════════════════════════════════ -->
+    <section class="page active" id="page-dashboard">
+
+      <!-- Stats Row -->
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-icon">🔍</div>
+          <div class="stat-info">
+            <div class="stat-value" id="statTotalScans">0</div>
+            <div class="stat-label">Total Scans Today</div>
+          </div>
+        </div>
+        <div class="stat-card stat-warning">
+          <div class="stat-icon">⚠️</div>
+          <div class="stat-info">
+            <div class="stat-value" id="statDiseasesFound">0</div>
+            <div class="stat-label">Diseases Detected</div>
+          </div>
+        </div>
+        <div class="stat-card stat-success">
+          <div class="stat-icon">✅</div>
+          <div class="stat-info">
+            <div class="stat-value" id="statHealthyPct">--</div>
+            <div class="stat-label">Healthy Zones</div>
+          </div>
+        </div>
+        <div class="stat-card stat-danger">
+          <div class="stat-icon">🚨</div>
+          <div class="stat-info">
+            <div class="stat-value" id="statCritical">0</div>
+            <div class="stat-label">Critical Alerts</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Grid -->
+      <div class="dashboard-grid">
+        <!-- Camera feeds -->
+        <div class="card camera-grid-card">
+          <div class="card-header">
+            <h2>📷 Live Camera Feeds</h2>
+            <button class="btn btn-secondary btn-sm" id="addCameraBtn">+ Add Camera</button>
+          </div>
+          <div class="camera-grid" id="cameraGrid">
+            <!-- Camera cells injected by JS -->
+            <div class="camera-placeholder" id="noCameraMsg">
+              <div class="placeholder-icon">📷</div>
+              <p>No cameras added yet.</p>
+              <button class="btn btn-primary" id="addFirstCameraBtn">+ Add Your First Camera</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Alerts panel -->
+        <div class="card alerts-card">
+          <div class="card-header">
+            <h2>🚨 Live Alerts</h2>
+            <button class="btn btn-secondary btn-sm" id="clearAlertsBtn">Clear</button>
+          </div>
+          <div class="alerts-list" id="alertsList">
+            <div class="no-alerts">No alerts — all clear 🌿</div>
+          </div>
+        </div>
+
+        <!-- Disease trend chart -->
+        <div class="card chart-card">
+          <div class="card-header">
+            <h2>📈 Disease Detection Trend</h2>
+            <div class="chart-range-btns">
+              <button class="range-btn active" data-range="1h">1H</button>
+              <button class="range-btn" data-range="24h">24H</button>
+              <button class="range-btn" data-range="7d">7D</button>
+            </div>
+          </div>
+          <canvas id="trendChart" height="180"></canvas>
+        </div>
+
+        <!-- Farm zone map -->
+        <div class="card zone-card">
+          <div class="card-header"><h2>🗺️ Farm Zone Health Map</h2></div>
+          <div class="zone-grid" id="zoneGrid"></div>
+          <div class="zone-legend">
+            <span class="legend-item healthy">Healthy</span>
+            <span class="legend-item warning">Warning</span>
+            <span class="legend-item danger">Disease</span>
+            <span class="legend-item critical">Critical</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ PAGE: CAMERAS ════════════════════════════════════ -->
+    <section class="page" id="page-cameras">
+      <div class="card">
+        <div class="card-header">
+          <h2>📷 Camera Management</h2>
+          <button class="btn btn-primary" id="addCameraBtn2">+ Add Camera</button>
+        </div>
+        <div id="cameraList" class="camera-list"></div>
+      </div>
+    </section>
+
+    <!-- ══ PAGE: LIVE ANALYSIS ══════════════════════════════ -->
+    <section class="page" id="page-analysis">
+      <div class="analysis-layout">
+        <!-- Live feed with heatmap -->
+        <div class="card analysis-feed-card">
+          <div class="card-header">
+            <h2>🔬 Live Analysis Feed</h2>
+            <div class="analysis-controls">
+              <label class="toggle-label">
+                <input type="checkbox" id="heatmapToggle" checked />
+                <span>Heatmap Overlay</span>
+              </label>
+              <select id="analysisCameraSelect" class="select-sm">
+                <option value="">-- Select Camera --</option>
+              </select>
+            </div>
+          </div>
+          <div class="feed-wrapper" id="analysisFeedWrapper">
+            <video id="analysisVideo" autoplay muted playsinline></video>
+            <canvas id="heatmapCanvas"></canvas>
+            <canvas id="captureCanvas" style="display:none"></canvas>
+            <div class="feed-placeholder" id="analysisFeedPlaceholder">
+              <p>Select a camera to begin live analysis</p>
+            </div>
+          </div>
+          <div class="feed-footer">
+            <button class="btn btn-primary" id="manualScanBtn">🔍 Analyze Now</button>
+            <span class="scan-status" id="scanStatus">Idle</span>
+          </div>
+        </div>
+
+        <!-- Results panel -->
+        <div class="analysis-results">
+          <!-- Current result -->
+          <div class="card result-card" id="currentResultCard">
+            <div class="card-header"><h2>🌿 Latest Result</h2></div>
+            <div id="resultContent" class="result-content">
+              <div class="result-empty">Run an analysis to see results</div>
+            </div>
+          </div>
+          <!-- Heatmap legend -->
+          <div class="card">
+            <div class="card-header"><h2>🌡️ Risk Heatmap Legend</h2></div>
+            <div class="heatmap-legend">
+              <div class="hm-item"><span class="hm-color hm-healthy"></span>0–20: Healthy</div>
+              <div class="hm-item"><span class="hm-color hm-low"></span>21–40: Low Risk</div>
+              <div class="hm-item"><span class="hm-color hm-medium"></span>41–60: Moderate</div>
+              <div class="hm-item"><span class="hm-color hm-high"></span>61–80: High Risk</div>
+              <div class="hm-item"><span class="hm-color hm-critical"></span>81–100: Critical</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══ PAGE: HISTORY ════════════════════════════════════ -->
+    <section class="page" id="page-history">
+      <div class="card">
+        <div class="card-header">
+          <h2>📋 Scan History</h2>
+          <div class="history-controls">
+            <button class="btn btn-secondary btn-sm" id="exportHistoryBtn">⬇ Export CSV</button>
+            <button class="btn btn-danger btn-sm" id="clearHistoryBtn">🗑 Clear</button>
+          </div>
+        </div>
+        <div id="historyTable" class="history-table-wrapper"></div>
+      </div>
+    </section>
+
+    <!-- ══ PAGE: SETTINGS ═══════════════════════════════════ -->
+    <section class="page" id="page-settings">
+      <div class="settings-grid">
+        <div class="card">
+          <div class="card-header"><h2>🤖 AI Configuration</h2></div>
+          <div class="settings-body">
+            <div class="form-group">
+              <label>Grok API Key</label>
+              <div class="input-row">
+                <input type="password" id="apiKeyInput" class="form-input" placeholder="xai-..." />
+                <button class="btn btn-primary" id="saveApiKey">Save</button>
+              </div>
+              <p class="form-hint">Get your free key at <a href="https://console.x.ai" target="_blank">console.x.ai</a></p>
+            </div>
+            <div class="form-group">
+              <label>Scan Interval (seconds)</label>
+              <input type="number" id="scanInterval" class="form-input" min="3" max="60" value="8" />
+            </div>
+            <div class="form-group">
+              <label>Alert Severity Threshold</label>
+              <select id="alertThreshold" class="form-input">
+                <option value="1">All (Severity 1+)</option>
+                <option value="2">Low+ (Severity 2+)</option>
+                <option value="3" selected>Medium+ (Severity 3+)</option>
+                <option value="4">High+ (Severity 4+)</option>
+                <option value="5">Critical only (Severity 5)</option>
+              </select>
+            </div>
+            <button class="btn btn-primary" id="saveSettings">Save Settings</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header"><h2>📷 Camera Defaults</h2></div>
+          <div class="settings-body">
+            <div class="form-group">
+              <label>Default Camera Resolution</label>
+              <select id="defaultResolution" class="form-input">
+                <option value="640x480">640×480 (Fast)</option>
+                <option value="1280x720" selected>1280×720 (HD)</option>
+                <option value="1920x1080">1920×1080 (Full HD)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>MJPEG Refresh Rate (ms)</label>
+              <input type="number" id="mjpegRefresh" class="form-input" min="100" max="5000" value="500" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ══ MODAL: Add Camera ════════════════════════════════ -->
+  <div class="modal-overlay" id="addCameraModal">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>+ Add Camera</h2>
+        <button class="modal-close" id="closeModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label>Camera Name</label>
+          <input type="text" id="camName" class="form-input" placeholder="e.g. Field A - North" />
+        </div>
+        <div class="form-group">
+          <label>Camera Type</label>
+          <select id="camType" class="form-input">
+            <option value="usb">USB / Built-in Webcam</option>
+            <option value="mjpeg">IP Camera (MJPEG HTTP stream)</option>
+            <option value="rtsp">CCTV / IP Camera (RTSP)</option>
+            <option value="upload">Image Upload (manual)</option>
+          </select>
+        </div>
+        <div class="form-group" id="camUrlGroup" style="display:none">
+          <label id="camUrlLabel">Stream URL</label>
+          <input type="text" id="camUrl" class="form-input" placeholder="http://192.168.1.100/video.mjpg" />
+          <p class="form-hint" id="camUrlHint">Enter the full URL of the MJPEG stream</p>
+        </div>
+        <div class="form-group" id="camDeviceGroup">
+          <label>Select Device</label>
+          <select id="camDevice" class="form-input">
+            <option value="">Loading devices...</option>
+          </select>
+          <button class="btn btn-secondary btn-sm" id="refreshDevices">🔄 Refresh</button>
+        </div>
+        <div class="form-group">
+          <label>Zone Assignment</label>
+          <select id="camZone" class="form-input">
+            <option value="">None</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="cancelAddCamera">Cancel</button>
+        <button class="btn btn-primary" id="confirmAddCamera">Add Camera</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/alerts.js"></script>
+  <script src="js/heatmap.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/ai.js"></script>
+  <script src="js/camera.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
