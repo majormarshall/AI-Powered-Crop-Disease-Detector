@@ -1,4 +1,4 @@
-﻿/**
+/**
  * camera.js — Manages USB/webcam, MJPEG IP cameras, RTSP (via server), and upload
  */
 const Camera = (() => {
@@ -73,8 +73,17 @@ const Camera = (() => {
     }
 
     else if (type === "rtsp") {
-      // RTSP: relay through server WebSocket
-      if (!_socket) _socket = io();
+      // RTSP: relay through server WebSocket — only works on local Node.js server
+      // On Vercel, Socket.io is not available so RTSP is disabled
+      const socket = window.io ? window.io() : null;
+      if (!socket || socket.connected === false && typeof socket.emit === "function" && socket.emit.toString().includes("{}")) {
+        console.warn("RTSP streaming requires the local Node.js server. Not available on Vercel.");
+        cam.active = false;
+        cam.rtspNote = "RTSP requires local server (run server/server.js locally)";
+        save();
+        throw new Error("RTSP streaming is not available on Vercel. Please use USB or MJPEG camera instead, or run the app locally with Node.js for RTSP support.");
+      }
+      if (!_socket) _socket = window.io();
       _socket.emit("start-rtsp", { cameraId: id, rtspUrl: cam.url });
       _socket.on("rtsp-frame", ({ cameraId, frame }) => {
         if (cameraId === id) emit("frame", id, frame);

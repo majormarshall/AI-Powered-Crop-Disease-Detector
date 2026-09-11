@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -6,7 +6,16 @@
   <title>🌿 CropGuard AI — Farm Disease Monitor</title>
   <link rel="stylesheet" href="css/style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-  <script src="/socket.io/socket.io.js"></script>
+  <!-- Socket.io stub: only used for local RTSP relay, gracefully disabled on Vercel -->
+  <script>
+    // If Socket.io server is not available (Vercel), provide a no-op stub
+    // so camera.js doesn't crash when it calls io()
+    if (typeof io === "undefined") {
+      window.io = () => ({
+        on: () => {}, emit: () => {}, off: () => {}, connected: false
+      });
+    }
+  </script>
 </head>
 <body>
   <!-- ══ SIDEBAR ══════════════════════════════════════════ -->

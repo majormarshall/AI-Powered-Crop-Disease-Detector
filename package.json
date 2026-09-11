@@ -1,0 +1,13 @@
+﻿{
+  "name": "cropguard-ai",
+  "version": "1.0.0",
+  "description": "AI-powered crop disease detector with Grok Vision, live heatmap, farm monitoring",
+  "private": true,
+  "scripts": {
+    "dev": "cd server && node server.js",
+    "start": "cd server && node server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
