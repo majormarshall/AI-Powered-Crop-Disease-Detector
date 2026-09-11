@@ -1,4 +1,4 @@
-require("dotenv").config();
+﻿require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -17,32 +17,27 @@ app.use(express.static(path.join(__dirname, "../public")));
 const GROK_API_KEY = process.env.GROK_API_KEY || "";
 const GROK_API_URL = "https://api.x.ai/v1/chat/completions";
 
+// Model priority list — newer multimodal models first, fallback to older vision ones
+const GROK_MODELS = ["grok-4", "grok-4.5", "grok-2-vision", "grok-vision-beta"];
+
 // Active RTSP streams: { socketId -> { cameraId -> ffmpegProcess } }
 const activeStreams = {};
 
-// -- Grok Vision analysis endpoint ------------------------------------------
-app.post("/api/analyze", async (req, res) => {
-  try {
-    const { imageBase64, mimeType = "image/jpeg", apiKey } = req.body;
-    const key = apiKey || GROK_API_KEY;
-    if (!key) return res.status(400).json({ error: "No Grok API key provided." });
-    if (!imageBase64) return res.status(400).json({ error: "No image data." });
-
-    const payload = {
-      model: "grok-2-vision-1212",
-      messages: [
+function buildPayload(model, imageBase64, mimeType) {
+  return {
+    model,
+    messages: [{
+      role: "user",
+      content: [
         {
-          role: "user",
-          content: [
-            {
-              type: "image_url",
-              image_url: { url: `data:${mimeType};base64,${imageBase64}` }
-            },
-            {
-              type: "text",
-              text: `You are an expert agricultural plant pathologist and crop disease specialist. Analyze this farm/crop image carefully.
+          type: "image_url",
+          image_url: { url: `data:${mimeType};base64,${imageBase64}` }
+        },
+        {
+          type: "text",
+          text: `You are an expert agricultural plant pathologist. Analyze this farm/crop image.
 
-Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
+Return ONLY valid JSON with this exact structure (no markdown, no extra text):
 {
   "overall_health": "healthy|stressed|diseased|severely_diseased",
   "disease_name": "Name or 'None detected'",
@@ -58,58 +53,107 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
   "urgency": "none|low|medium|high|critical",
   "additional_issues": ["any other observations"],
   "heatmap_zones": {
-    "top_left": 0-100,
-    "top_center": 0-100,
-    "top_right": 0-100,
-    "mid_left": 0-100,
-    "mid_center": 0-100,
-    "mid_right": 0-100,
-    "bot_left": 0-100,
-    "bot_center": 0-100,
-    "bot_right": 0-100
+    "top_left": 0-100, "top_center": 0-100, "top_right": 0-100,
+    "mid_left": 0-100, "mid_center": 0-100, "mid_right": 0-100,
+    "bot_left": 0-100, "bot_center": 0-100, "bot_right": 0-100
   }
 }
-
-heatmap_zones: each zone = risk score 0 (healthy) to 100 (critical disease). Be precise based on what you see.`
-            }
-          ]
+heatmap_zones values: 0=healthy, 100=critical disease. Be precise.`
         }
-      ],
-      max_tokens: 1024,
-      temperature: 0.1
-    };
+      ]
+    }],
+    max_tokens: 1200,
+    temperature: 0.1
+  };
+}
 
-    const fetch = require("node-fetch");
-    const response = await fetch(GROK_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${key}` },
-      body: JSON.stringify(payload)
+// ── /api/analyze — Grok Vision ──────────────────────────────────────────────
+app.post("/api/analyze", async (req, res) => {
+  try {
+    const { imageBase64, mimeType = "image/jpeg", apiKey } = req.body;
+    const key = apiKey || GROK_API_KEY;
+
+    if (!key) return res.status(400).json({
+      error: "No Grok API key provided. Go to Settings and add your key from console.x.ai"
+    });
+    if (!imageBase64) return res.status(400).json({
+      error: "No image captured. Make sure your camera is running and selected."
     });
 
-    if (!response.ok) {
-      const errText = await response.text();
-      return res.status(response.status).json({ error: errText });
+    // Use native fetch (Node 18+), fall back to node-fetch for older Node
+    const fetchFn = typeof fetch !== "undefined" ? fetch : require("node-fetch");
+
+    let lastError = "";
+    let responseData = null;
+
+    for (const model of GROK_MODELS) {
+      try {
+        console.log(`[Grok] Trying model: ${model}`);
+        const resp = await fetchFn(GROK_API_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${key}`
+          },
+          body: JSON.stringify(buildPayload(model, imageBase64, mimeType))
+        });
+
+        const text = await resp.text();
+
+        if (!resp.ok) {
+          // Model not found — try next
+          if (text.includes("not found") || text.includes("invalid-argument") ||
+              text.includes("Model not found") || resp.status === 404) {
+            console.warn(`[Grok] Model "${model}" not available, trying next...`);
+            lastError = `Model "${model}" not available`;
+            continue;
+          }
+          // Likely auth error — stop immediately
+          return res.status(resp.status).json({
+            error: `Grok API error (${resp.status}): ${text.substring(0, 400)}`
+          });
+        }
+
+        responseData = JSON.parse(text);
+        console.log(`[Grok] Success with: ${model}`);
+        break;
+
+      } catch (e) {
+        lastError = e.message;
+        console.warn(`[Grok] "${model}" threw: ${e.message}`);
+        continue;
+      }
     }
 
-    const data = await response.json();
-    const rawContent = data.choices?.[0]?.message?.content || "{}";
+    if (!responseData) {
+      return res.status(503).json({
+        error: `No working Grok model found. Last error: ${lastError}. Verify your API key has vision access at console.x.ai`
+      });
+    }
 
+    const rawContent = responseData.choices?.[0]?.message?.content || "{}";
     let parsed;
     try {
-      const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
-      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawContent);
+      const match = rawContent.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(match ? match[0] : rawContent);
     } catch {
-      parsed = { error: "Parse error", raw: rawContent };
+      parsed = { error: "AI response parse error", raw: rawContent.substring(0, 400) };
     }
 
     res.json({ result: parsed, timestamp: new Date().toISOString() });
+
   } catch (err) {
     console.error("Analyze error:", err);
     res.status(500).json({ error: err.message });
   }
 });
 
-// -- Socket.io: RTSP stream relay --------------------------------------------
+// ── Health check endpoint ────────────────────────────────────────────────────
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", models: GROK_MODELS, hasKey: !!GROK_API_KEY });
+});
+
+// ── Socket.io: RTSP relay ────────────────────────────────────────────────────
 io.on("connection", (socket) => {
   console.log("Client connected:", socket.id);
   activeStreams[socket.id] = {};
@@ -137,9 +181,11 @@ io.on("connection", (socket) => {
   });
 });
 
+// ── Start server ─────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-  console.log(`\n?? Crop Disease Detector running at http://localhost:${PORT}`);
-  console.log(`?? Grok API: ${GROK_API_KEY ? "Key loaded from .env" : "No key in .env - use UI to enter key"}`);
-  console.log(`?? RTSP support: FFmpeg required for RTSP streams\n`);
+  console.log(`\n🌿 CropGuard AI running at http://localhost:${PORT}`);
+  console.log(`🤖 Grok models: ${GROK_MODELS.join(", ")}`);
+  console.log(`🔑 API Key: ${GROK_API_KEY ? "Loaded from .env" : "Not set — use Settings UI"}`);
+  console.log(`📡 RTSP: FFmpeg required for CCTV streams\n`);
 });
