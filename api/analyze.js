@@ -1,9 +1,7 @@
-﻿// api/analyze.js — Vercel Serverless Function for Grok Vision AI
-// This replaces the Express server for Vercel deployment
+﻿// api/analyze.js — Vercel Serverless Function (CommonJS)
+// Handles Grok Vision AI analysis requests
 
 const GROK_API_URL = "https://api.x.ai/v1/chat/completions";
-
-// Grok model priority list (newest first, with fallbacks)
 const GROK_MODELS = ["grok-4", "grok-4.5", "grok-2-vision", "grok-vision-beta"];
 
 function buildPayload(model, imageBase64, mimeType) {
@@ -20,28 +18,28 @@ function buildPayload(model, imageBase64, mimeType) {
           type: "text",
           text: `You are an expert agricultural plant pathologist. Analyze this farm/crop image.
 
-Return ONLY valid JSON with this exact structure (no markdown, no extra text):
+Return ONLY valid JSON (no markdown, no extra text) with this structure:
 {
   "overall_health": "healthy|stressed|diseased|severely_diseased",
-  "disease_name": "Name or 'None detected'",
+  "disease_name": "Name or None detected",
   "confidence": 0.0-1.0,
   "severity": 0-5,
   "affected_region": "none|top-left|top-center|top-right|center-left|center|center-right|bottom-left|bottom-center|bottom-right|widespread",
   "affected_percentage": 0-100,
-  "crop_type": "Detected crop type or 'Unknown'",
-  "symptoms": ["symptom1", "symptom2"],
-  "treatment": ["step1", "step2", "step3"],
-  "prevention": ["tip1", "tip2"],
+  "crop_type": "crop type or Unknown",
+  "symptoms": ["symptom1"],
+  "treatment": ["step1", "step2"],
+  "prevention": ["tip1"],
   "spoilage_level": "none|minimal|moderate|severe",
   "urgency": "none|low|medium|high|critical",
-  "additional_issues": ["any other observations"],
+  "additional_issues": [],
   "heatmap_zones": {
     "top_left": 0-100, "top_center": 0-100, "top_right": 0-100,
     "mid_left": 0-100, "mid_center": 0-100, "mid_right": 0-100,
     "bot_left": 0-100, "bot_center": 0-100, "bot_right": 0-100
   }
 }
-heatmap_zones values: 0=healthy, 100=critical disease. Be precise based on what you see.`
+heatmap_zones: 0=healthy, 100=critical.`
         }
       ]
     }],
@@ -50,14 +48,22 @@ heatmap_zones values: 0=healthy, 100=critical disease. Be precise based on what 
   };
 }
 
-export default async function handler(req, res) {
-  // Handle CORS preflight
+module.exports = async function handler(req, res) {
+  // CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS, GET");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
+  // Preflight
+  if (req.method === "OPTIONS") return res.status(200).end();
+
+  // Health check via GET
+  if (req.method === "GET") {
+    return res.status(200).json({
+      status: "ok",
+      models: GROK_MODELS,
+      hasEnvKey: !!process.env.GROK_API_KEY
+    });
   }
 
   if (req.method !== "POST") {
@@ -65,26 +71,23 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { imageBase64, mimeType = "image/jpeg", apiKey } = req.body;
-
-    // API key: from request body (client-side) or Vercel env variable
+    const { imageBase64, mimeType = "image/jpeg", apiKey } = req.body || {};
     const key = apiKey || process.env.GROK_API_KEY;
 
     if (!key) {
       return res.status(400).json({
-        error: "No Grok API key provided. Go to Settings and paste your key from console.x.ai"
+        error: "No Grok API key. Go to Settings and paste your key from console.x.ai"
       });
     }
     if (!imageBase64) {
       return res.status(400).json({
-        error: "No image captured. Make sure your camera feed is active."
+        error: "No image captured. Make sure your camera is active and selected."
       });
     }
 
     let lastError = "";
     let responseData = null;
 
-    // Try each Grok model in order until one works
     for (const model of GROK_MODELS) {
       try {
         const resp = await fetch(GROK_API_URL, {
@@ -105,10 +108,9 @@ export default async function handler(req, res) {
             text.includes("Model not found") ||
             resp.status === 404
           ) {
-            lastError = `Model "${model}" not available`;
+            lastError = `Model "${model}" unavailable`;
             continue;
           }
-          // Auth or other fatal error — stop immediately
           return res.status(resp.status).json({
             error: `Grok API error (${resp.status}): ${text.substring(0, 400)}`
           });
@@ -125,7 +127,7 @@ export default async function handler(req, res) {
 
     if (!responseData) {
       return res.status(503).json({
-        error: `No working Grok model found. ${lastError}. Check your API key at console.x.ai`
+        error: `No working Grok model found. ${lastError}. Verify API key at console.x.ai`
       });
     }
 
@@ -135,7 +137,7 @@ export default async function handler(req, res) {
       const match = rawContent.match(/\{[\s\S]*\}/);
       parsed = JSON.parse(match ? match[0] : rawContent);
     } catch {
-      parsed = { error: "AI response parse error", raw: rawContent.substring(0, 400) };
+      parsed = { error: "AI parse error", raw: rawContent.substring(0, 300) };
     }
 
     return res.status(200).json({
@@ -144,6 +146,7 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
+    console.error("Handler error:", err);
     return res.status(500).json({ error: err.message });
   }
-}
+};

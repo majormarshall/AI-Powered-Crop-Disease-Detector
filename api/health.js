@@ -1,5 +1,4 @@
-﻿// api/health.js — Vercel health check endpoint
-export default function handler(req, res) {
+﻿module.exports = function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.status(200).json({
     status: "ok",
@@ -8,4 +7,4 @@ export default function handler(req, res) {
     hasEnvKey: !!process.env.GROK_API_KEY,
     timestamp: new Date().toISOString()
   });
-}
+};
