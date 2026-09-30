@@ -1,4 +1,4 @@
-﻿// api/analyze.js — Vercel Serverless Function (CommonJS)
+// api/analyze.js — Vercel Serverless Function (CommonJS)
 // Handles Grok Vision AI analysis requests
 
 const GROK_API_URL = "https://api.x.ai/v1/chat/completions";
