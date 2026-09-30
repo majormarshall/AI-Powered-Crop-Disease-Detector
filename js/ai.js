@@ -1,10 +1,10 @@
-﻿/**
+/**
  * ai.js — Grok Vision AI integration for live crop disease analysis
  */
 const AI = (() => {
   const API_URL = "/api/analyze"; // Routes through our Node.js server
 
-  let _apiKey = localStorage.getItem("grok_api_key") || "";
+  let _apiKey = localStorage.getItem("groq_api_key") || "";
   let _scanInterval = parseInt(localStorage.getItem("scan_interval") || "8");
   let _alertThreshold = parseInt(localStorage.getItem("alert_threshold") || "3");
   let _scanning = false;
@@ -17,7 +17,7 @@ const AI = (() => {
 
   function setApiKey(key) {
     _apiKey = key.trim();
-    localStorage.setItem("grok_api_key", _apiKey);
+    localStorage.setItem("groq_api_key", _apiKey);
   }
 
   function getApiKey() { return _apiKey; }
@@ -64,7 +64,7 @@ const AI = (() => {
    */
   async function analyze(base64Image) {
     if (!base64Image) throw new Error("No image data");
-    if (!_apiKey) throw new Error("No API key. Please add your Grok API key in Settings.");
+    if (!_apiKey) throw new Error("No API key. Please add your Groq API key in Settings.");
 
     const res = await fetch(API_URL, {
       method: "POST",
@@ -86,7 +86,7 @@ const AI = (() => {
    */
   function startScanning(getFrameFn, onResult, onError, onCountdown) {
     if (_scanning) return;
-    if (!_apiKey) { onError("Please add your Grok API key in Settings first."); return; }
+    if (!_apiKey) { onError("Please add your Groq API key in Settings first."); return; }
     _scanning = true;
 
     const doScan = async () => {

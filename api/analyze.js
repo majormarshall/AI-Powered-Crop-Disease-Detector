@@ -1,45 +1,53 @@
-// api/analyze.js — Vercel Serverless Function (CommonJS)
-// Handles Grok Vision AI analysis requests
+// api/analyze.js - Vercel Serverless Function using Groq API (groq.com)
 
-const GROK_API_URL = "https://api.x.ai/v1/chat/completions";
-const GROK_MODELS = ["grok-4", "grok-4.5", "grok-2-vision", "grok-vision-beta"];
+const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
+
+const GROQ_MODELS = [
+  "meta-llama/llama-4-scout-17b-16e-instruct",
+  "meta-llama/llama-4-maverick-17b-128e-instruct",
+  "llama-3.2-90b-vision-preview",
+  "llama-3.2-11b-vision-preview"
+];
+
+const ANALYSIS_PROMPT = [
+  "You are an expert agricultural plant pathologist. Analyze this farm/crop image carefully.",
+  "Return ONLY valid JSON with no markdown, no extra text. Use this exact structure:",
+  '{',
+  '  "overall_health": "healthy or stressed or diseased or severely_diseased",',
+  '  "disease_name": "Specific disease name or None detected",',
+  '  "confidence": 0.95,',
+  '  "severity": 0,',
+  '  "affected_region": "none or top-left or top-center or top-right or center-left or center or center-right or bottom-left or bottom-center or bottom-right or widespread",',
+  '  "affected_percentage": 0,',
+  '  "crop_type": "Detected crop type or Unknown",',
+  '  "symptoms": ["List symptoms you actually see"],',
+  '  "treatment": ["Treatment step 1", "Treatment step 2"],',
+  '  "prevention": ["Prevention tip 1"],',
+  '  "spoilage_level": "none or minimal or moderate or severe",',
+  '  "urgency": "none or low or medium or high or critical",',
+  '  "additional_issues": ["Other observations"],',
+  '  "heatmap_zones": {',
+  '    "top_left": 5, "top_center": 5, "top_right": 5,',
+  '    "mid_left": 5, "mid_center": 5, "mid_right": 5,',
+  '    "bot_left": 5, "bot_center": 5, "bot_right": 5',
+  '  }',
+  '}',
+  "heatmap_zones: 0=healthy, 100=critical disease. Set values based on what you actually see in the image."
+].join("\n");
 
 function buildPayload(model, imageBase64, mimeType) {
   return {
-    model,
+    model: model,
     messages: [{
       role: "user",
       content: [
         {
           type: "image_url",
-          image_url: { url: `data:${mimeType};base64,${imageBase64}` }
+          image_url: { url: "data:" + mimeType + ";base64," + imageBase64 }
         },
         {
           type: "text",
-          text: `You are an expert agricultural plant pathologist. Analyze this farm/crop image.
-
-Return ONLY valid JSON (no markdown, no extra text) with this structure:
-{
-  "overall_health": "healthy|stressed|diseased|severely_diseased",
-  "disease_name": "Name or None detected",
-  "confidence": 0.0-1.0,
-  "severity": 0-5,
-  "affected_region": "none|top-left|top-center|top-right|center-left|center|center-right|bottom-left|bottom-center|bottom-right|widespread",
-  "affected_percentage": 0-100,
-  "crop_type": "crop type or Unknown",
-  "symptoms": ["symptom1"],
-  "treatment": ["step1", "step2"],
-  "prevention": ["tip1"],
-  "spoilage_level": "none|minimal|moderate|severe",
-  "urgency": "none|low|medium|high|critical",
-  "additional_issues": [],
-  "heatmap_zones": {
-    "top_left": 0-100, "top_center": 0-100, "top_right": 0-100,
-    "mid_left": 0-100, "mid_center": 0-100, "mid_right": 0-100,
-    "bot_left": 0-100, "bot_center": 0-100, "bot_right": 0-100
-  }
-}
-heatmap_zones: 0=healthy, 100=critical.`
+          text: ANALYSIS_PROMPT
         }
       ]
     }],
@@ -49,20 +57,18 @@ heatmap_zones: 0=healthy, 100=critical.`
 }
 
 module.exports = async function handler(req, res) {
-  // CORS headers
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS, GET");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-  // Preflight
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // Health check via GET
   if (req.method === "GET") {
     return res.status(200).json({
       status: "ok",
-      models: GROK_MODELS,
-      hasEnvKey: !!process.env.GROK_API_KEY
+      provider: "Groq",
+      models: GROQ_MODELS,
+      hasEnvKey: !!process.env.GROQ_API_KEY
     });
   }
 
@@ -71,48 +77,52 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const { imageBase64, mimeType = "image/jpeg", apiKey } = req.body || {};
-    const key = apiKey || process.env.GROK_API_KEY;
+    const body = req.body || {};
+    const imageBase64 = body.imageBase64;
+    const mimeType = body.mimeType || "image/jpeg";
+    const apiKey = body.apiKey;
+    const key = apiKey || process.env.GROQ_API_KEY;
 
     if (!key) {
       return res.status(400).json({
-        error: "No Grok API key. Go to Settings and paste your key from console.x.ai"
+        error: "No API key provided. Add your Groq API key (starts with gsk_) from console.groq.com in the Settings page."
       });
     }
     if (!imageBase64) {
       return res.status(400).json({
-        error: "No image captured. Make sure your camera is active and selected."
+        error: "No image captured. Select a camera and make sure the feed is active."
       });
     }
 
     let lastError = "";
     let responseData = null;
 
-    for (const model of GROK_MODELS) {
+    for (var i = 0; i < GROQ_MODELS.length; i++) {
+      var model = GROQ_MODELS[i];
       try {
-        const resp = await fetch(GROK_API_URL, {
+        var resp = await fetch(GROQ_API_URL, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            "Authorization": `Bearer ${key}`
+            "Authorization": "Bearer " + key
           },
           body: JSON.stringify(buildPayload(model, imageBase64, mimeType))
         });
 
-        const text = await resp.text();
+        var text = await resp.text();
 
         if (!resp.ok) {
           if (
-            text.includes("not found") ||
-            text.includes("invalid-argument") ||
-            text.includes("Model not found") ||
+            text.indexOf("not found") !== -1 ||
+            text.indexOf("model_not_found") !== -1 ||
+            text.indexOf("does not exist") !== -1 ||
             resp.status === 404
           ) {
-            lastError = `Model "${model}" unavailable`;
+            lastError = "Model " + model + " unavailable";
             continue;
           }
           return res.status(resp.status).json({
-            error: `Grok API error (${resp.status}): ${text.substring(0, 400)}`
+            error: "Groq API error (" + resp.status + "): " + text.substring(0, 400)
           });
         }
 
@@ -127,17 +137,25 @@ module.exports = async function handler(req, res) {
 
     if (!responseData) {
       return res.status(503).json({
-        error: `No working Grok model found. ${lastError}. Verify API key at console.x.ai`
+        error: "No working Groq vision model found. " + lastError + ". Check your API key at console.groq.com"
       });
     }
 
-    const rawContent = responseData.choices?.[0]?.message?.content || "{}";
-    let parsed;
+    var rawContent = "{}";
+    if (
+      responseData.choices &&
+      responseData.choices[0] &&
+      responseData.choices[0].message
+    ) {
+      rawContent = responseData.choices[0].message.content || "{}";
+    }
+
+    var parsed;
     try {
-      const match = rawContent.match(/\{[\s\S]*\}/);
-      parsed = JSON.parse(match ? match[0] : rawContent);
-    } catch {
-      parsed = { error: "AI parse error", raw: rawContent.substring(0, 300) };
+      var jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : rawContent);
+    } catch (e) {
+      parsed = { error: "AI response parse error", raw: rawContent.substring(0, 300) };
     }
 
     return res.status(200).json({
