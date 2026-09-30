@@ -1,39 +1,53 @@
 // api/analyze.js - Vercel Serverless Function using Groq API (groq.com)
+// Updated: removed decommissioned models, improved error fallback
 
 const GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions";
 
+// Only confirmed current Groq vision models (as of Sept 2026)
 const GROQ_MODELS = [
   "meta-llama/llama-4-scout-17b-16e-instruct",
   "meta-llama/llama-4-maverick-17b-128e-instruct",
-  "llama-3.2-90b-vision-preview",
   "llama-3.2-11b-vision-preview"
 ];
 
 const ANALYSIS_PROMPT = [
   "You are an expert agricultural plant pathologist. Analyze this farm/crop image carefully.",
   "Return ONLY valid JSON with no markdown, no extra text. Use this exact structure:",
-  '{',
-  '  "overall_health": "healthy or stressed or diseased or severely_diseased",',
-  '  "disease_name": "Specific disease name or None detected",',
-  '  "confidence": 0.95,',
-  '  "severity": 0,',
-  '  "affected_region": "none or top-left or top-center or top-right or center-left or center or center-right or bottom-left or bottom-center or bottom-right or widespread",',
-  '  "affected_percentage": 0,',
-  '  "crop_type": "Detected crop type or Unknown",',
-  '  "symptoms": ["List symptoms you actually see"],',
-  '  "treatment": ["Treatment step 1", "Treatment step 2"],',
-  '  "prevention": ["Prevention tip 1"],',
-  '  "spoilage_level": "none or minimal or moderate or severe",',
-  '  "urgency": "none or low or medium or high or critical",',
-  '  "additional_issues": ["Other observations"],',
-  '  "heatmap_zones": {',
-  '    "top_left": 5, "top_center": 5, "top_right": 5,',
-  '    "mid_left": 5, "mid_center": 5, "mid_right": 5,',
-  '    "bot_left": 5, "bot_center": 5, "bot_right": 5',
-  '  }',
-  '}',
-  "heatmap_zones: 0=healthy, 100=critical disease. Set values based on what you actually see in the image."
+  "{",
+  "  \"overall_health\": \"healthy or stressed or diseased or severely_diseased\",",
+  "  \"disease_name\": \"Specific disease name or None detected\",",
+  "  \"confidence\": 0.95,",
+  "  \"severity\": 0,",
+  "  \"affected_region\": \"none or top-left or top-center or top-right or center-left or center or center-right or bottom-left or bottom-center or bottom-right or widespread\",",
+  "  \"affected_percentage\": 0,",
+  "  \"crop_type\": \"Detected crop type or Unknown\",",
+  "  \"symptoms\": [\"List symptoms you actually observe\"],",
+  "  \"treatment\": [\"Treatment step 1\", \"Treatment step 2\"],",
+  "  \"prevention\": [\"Prevention tip 1\"],",
+  "  \"spoilage_level\": \"none or minimal or moderate or severe\",",
+  "  \"urgency\": \"none or low or medium or high or critical\",",
+  "  \"additional_issues\": [\"Other observations\"],",
+  "  \"heatmap_zones\": {",
+  "    \"top_left\": 5, \"top_center\": 5, \"top_right\": 5,",
+  "    \"mid_left\": 5, \"mid_center\": 5, \"mid_right\": 5,",
+  "    \"bot_left\": 5, \"bot_center\": 5, \"bot_right\": 5",
+  "  }",
+  "}",
+  "heatmap_zones: 0=healthy, 100=critical disease. Set values based on actual visible disease spread in the image."
 ].join("\n");
+
+function isModelUnavailable(status, text) {
+  return (
+    status === 404 ||
+    text.indexOf("not found") !== -1 ||
+    text.indexOf("model_not_found") !== -1 ||
+    text.indexOf("does not exist") !== -1 ||
+    text.indexOf("model_decommissioned") !== -1 ||
+    text.indexOf("decommissioned") !== -1 ||
+    text.indexOf("no longer supported") !== -1 ||
+    text.indexOf("deprecated") !== -1
+  );
+}
 
 function buildPayload(model, imageBase64, mimeType) {
   return {
@@ -77,11 +91,11 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    const body = req.body || {};
-    const imageBase64 = body.imageBase64;
-    const mimeType = body.mimeType || "image/jpeg";
-    const apiKey = body.apiKey;
-    const key = apiKey || process.env.GROQ_API_KEY;
+    var body = req.body || {};
+    var imageBase64 = body.imageBase64;
+    var mimeType = body.mimeType || "image/jpeg";
+    var apiKey = body.apiKey;
+    var key = apiKey || process.env.GROQ_API_KEY;
 
     if (!key) {
       return res.status(400).json({
@@ -94,8 +108,8 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    let lastError = "";
-    let responseData = null;
+    var lastError = "";
+    var responseData = null;
 
     for (var i = 0; i < GROQ_MODELS.length; i++) {
       var model = GROQ_MODELS[i];
@@ -112,13 +126,8 @@ module.exports = async function handler(req, res) {
         var text = await resp.text();
 
         if (!resp.ok) {
-          if (
-            text.indexOf("not found") !== -1 ||
-            text.indexOf("model_not_found") !== -1 ||
-            text.indexOf("does not exist") !== -1 ||
-            resp.status === 404
-          ) {
-            lastError = "Model " + model + " unavailable";
+          if (isModelUnavailable(resp.status, text)) {
+            lastError = "Model " + model + " unavailable/decommissioned";
             continue;
           }
           return res.status(resp.status).json({
@@ -142,11 +151,7 @@ module.exports = async function handler(req, res) {
     }
 
     var rawContent = "{}";
-    if (
-      responseData.choices &&
-      responseData.choices[0] &&
-      responseData.choices[0].message
-    ) {
+    if (responseData.choices && responseData.choices[0] && responseData.choices[0].message) {
       rawContent = responseData.choices[0].message.content || "{}";
     }
 
