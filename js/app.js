@@ -1,4 +1,4 @@
-﻿/**
+/**
  * app.js — Main application controller
  * Wires together Camera, AI, Heatmap, Dashboard, Alerts, Charts
  */
@@ -198,7 +198,7 @@
 
     startBtn?.addEventListener("click", () => {
       if (_monitoringActive) return;
-      if (!AI.getApiKey()) { showToast("Add your Grok API key in Settings first", "error"); return; }
+      if (!AI.getApiKey()) { showToast("Add your OpenRouter API key in Settings first (sk-or-v1-...)", "error"); return; }
       _monitoringActive = true;
       startBtn.style.display = "none";
       stopBtn.style.display = "inline-flex";

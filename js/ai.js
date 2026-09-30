@@ -4,7 +4,15 @@
 const AI = (() => {
   const API_URL = "/api/analyze"; // Routes through our Node.js server
 
-  let _apiKey = localStorage.getItem("openrouter_api_key") || "";
+  // Migrate any key saved under old provider names
+  const _migratedKey = localStorage.getItem("openrouter_api_key")
+    || localStorage.getItem("groq_api_key")
+    || localStorage.getItem("grok_api_key")
+    || "";
+  if (_migratedKey && !localStorage.getItem("openrouter_api_key")) {
+    localStorage.setItem("openrouter_api_key", _migratedKey);
+  }
+  let _apiKey = _migratedKey;
   let _scanInterval = parseInt(localStorage.getItem("scan_interval") || "8");
   let _alertThreshold = parseInt(localStorage.getItem("alert_threshold") || "3");
   let _scanning = false;
