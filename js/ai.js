@@ -1,5 +1,5 @@
 /**
- * ai.js — Grok Vision AI integration for live crop disease analysis
+ * ai.js — OpenRouter Vision AI integration for live crop disease analysis
  */
 const AI = (() => {
   const API_URL = "/api/analyze"; // Routes through our Node.js server
@@ -68,7 +68,7 @@ const AI = (() => {
   }
 
   /**
-   * Send image to Grok for analysis
+   * Send image to OpenRouter for analysis
    */
   async function analyze(base64Image) {
     if (!base64Image) throw new Error("No image data");

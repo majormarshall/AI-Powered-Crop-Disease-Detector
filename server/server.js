@@ -1,4 +1,4 @@
-﻿require("dotenv").config();
+require("dotenv").config();
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -14,11 +14,11 @@ app.use(cors());
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "../public")));
 
-const GROK_API_KEY = process.env.GROK_API_KEY || "";
-const GROK_API_URL = "https://api.x.ai/v1/chat/completions";
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || "";
+const OPENROUTER_API_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 // Model priority list — newer multimodal models first, fallback to older vision ones
-const GROK_MODELS = ["grok-4", "grok-4.5", "grok-2-vision", "grok-vision-beta"];
+const OPENROUTER_MODELS = ["grok-4", "grok-4.5", "grok-2-vision", "grok-vision-beta"];
 
 // Active RTSP streams: { socketId -> { cameraId -> ffmpegProcess } }
 const activeStreams = {};
@@ -71,10 +71,10 @@ heatmap_zones values: 0=healthy, 100=critical disease. Be precise.`
 app.post("/api/analyze", async (req, res) => {
   try {
     const { imageBase64, mimeType = "image/jpeg", apiKey } = req.body;
-    const key = apiKey || GROK_API_KEY;
+    const key = apiKey || OPENROUTER_API_KEY;
 
     if (!key) return res.status(400).json({
-      error: "No Grok API key provided. Go to Settings and add your key from console.x.ai"
+      error: "No OpenRouter API key provided. Go to Settings and add your key from openrouter.ai/keys"
     });
     if (!imageBase64) return res.status(400).json({
       error: "No image captured. Make sure your camera is running and selected."
@@ -86,10 +86,10 @@ app.post("/api/analyze", async (req, res) => {
     let lastError = "";
     let responseData = null;
 
-    for (const model of GROK_MODELS) {
+    for (const model of OPENROUTER_MODELS) {
       try {
-        console.log(`[Grok] Trying model: ${model}`);
-        const resp = await fetchFn(GROK_API_URL, {
+        console.log(`[OpenRouter] Trying model: ${model}`);
+        const resp = await fetchFn(OPENROUTER_API_URL, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -104,30 +104,30 @@ app.post("/api/analyze", async (req, res) => {
           // Model not found — try next
           if (text.includes("not found") || text.includes("invalid-argument") ||
               text.includes("Model not found") || resp.status === 404) {
-            console.warn(`[Grok] Model "${model}" not available, trying next...`);
+            console.warn(`[OpenRouter] Model "${model}" not available, trying next...`);
             lastError = `Model "${model}" not available`;
             continue;
           }
           // Likely auth error — stop immediately
           return res.status(resp.status).json({
-            error: `Grok API error (${resp.status}): ${text.substring(0, 400)}`
+            error: `OpenRouter API error (${resp.status}): ${text.substring(0, 400)}`
           });
         }
 
         responseData = JSON.parse(text);
-        console.log(`[Grok] Success with: ${model}`);
+        console.log(`[OpenRouter] Success with: ${model}`);
         break;
 
       } catch (e) {
         lastError = e.message;
-        console.warn(`[Grok] "${model}" threw: ${e.message}`);
+        console.warn(`[OpenRouter] "${model}" threw: ${e.message}`);
         continue;
       }
     }
 
     if (!responseData) {
       return res.status(503).json({
-        error: `No working Grok model found. Last error: ${lastError}. Verify your API key has vision access at console.x.ai`
+        error: `No working Grok model found. Last error: ${lastError}. Verify your API key has vision access at openrouter.ai/keys`
       });
     }
 
@@ -150,7 +150,7 @@ app.post("/api/analyze", async (req, res) => {
 
 // ── Health check endpoint ────────────────────────────────────────────────────
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", models: GROK_MODELS, hasKey: !!GROK_API_KEY });
+  res.json({ status: "ok", models: OPENROUTER_MODELS, hasKey: !!OPENROUTER_API_KEY });
 });
 
 // ── Socket.io: RTSP relay ────────────────────────────────────────────────────
@@ -185,7 +185,7 @@ io.on("connection", (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`\n🌿 CropGuard AI running at http://localhost:${PORT}`);
-  console.log(`🤖 Grok models: ${GROK_MODELS.join(", ")}`);
-  console.log(`🔑 API Key: ${GROK_API_KEY ? "Loaded from .env" : "Not set — use Settings UI"}`);
+  console.log(`🤖 Grok models: ${OPENROUTER_MODELS.join(", ")}`);
+  console.log(`🔑 API Key: ${OPENROUTER_API_KEY ? "Loaded from .env" : "Not set — use Settings UI"}`);
   console.log(`📡 RTSP: FFmpeg required for CCTV streams\n`);
 });
