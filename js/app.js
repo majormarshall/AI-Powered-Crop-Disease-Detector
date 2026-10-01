@@ -172,6 +172,46 @@
       Heatmap.setEnabled(e.target.checked);
     });
 
+    // ── Quick Webcam button — one-click camera setup from Live Analysis ──────
+    document.getElementById("quickWebcamBtn")?.addEventListener("click", async () => {
+      const btn = document.getElementById("quickWebcamBtn");
+      btn.textContent = "⏳ Connecting...";
+      btn.disabled = true;
+      try {
+        // Add webcam camera if not already added
+        let cams = Camera.getAll();
+        let webcamCam = cams.find(c => c.type === "usb");
+        if (!webcamCam) {
+          // Get available devices
+          const devices = await Camera.getDevices();
+          const deviceId = devices[0]?.deviceId || "";
+          webcamCam = await Camera.add({
+            name: "My Webcam",
+            type: "usb",
+            deviceId: deviceId,
+            zone: "A1"
+          });
+        }
+        // Select it in the dropdown
+        const sel = document.getElementById("analysisCameraSelect");
+        if (sel) {
+          // Refresh the dropdown options first
+          Dashboard.populateAnalysisCameraSelect();
+          await new Promise(r => setTimeout(r, 200));
+          sel.value = webcamCam.id;
+          sel.dispatchEvent(new Event("change"));
+        }
+        _activeAnalysisCamId = webcamCam.id;
+        btn.textContent = "✅ Webcam Active";
+        btn.style.background = "#2d6a2d";
+        showToast("📷 Webcam connected! Click Start Monitoring to begin.", "success");
+      } catch (err) {
+        btn.textContent = "📷 Use Webcam";
+        btn.disabled = false;
+        showToast("Camera error: " + err.message, "error");
+      }
+    });
+
     // Manual scan button
     document.getElementById("manualScanBtn")?.addEventListener("click", () => {
       if (!_activeAnalysisCamId) { showToast("Select a camera first", "error"); return; }
