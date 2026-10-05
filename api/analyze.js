@@ -105,7 +105,7 @@ module.exports = async function handler(req, res) {
     var imageBase64 = body.imageBase64;
     var mimeType = body.mimeType || "image/jpeg";
     var apiKey = body.apiKey;
-    var key = apiKey || process.env.OPENROUTER_API_KEY;
+    var key = (apiKey || process.env.OPENROUTER_API_KEY || "").trim();
 
     if (!key) {
       return res.status(400).json({
@@ -143,7 +143,8 @@ module.exports = async function handler(req, res) {
             continue;
           }
           return res.status(resp.status).json({
-            error: "OpenRouter API error (" + resp.status + "): " + text.substring(0, 500)
+            error: "OpenRouter API error (" + resp.status + "): " + text.substring(0, 500),
+            debugKeyPreview: key ? (key.substring(0, 8) + "... len:" + key.length) : "empty"
           });
         }
 
